@@ -1,6 +1,5 @@
 from typing import Any, Dict, Tuple
 import aws_lambda_powertools as alp
-import requests
 import os
 import boto3
 from datetime import date, datetime,timezone,timedelta

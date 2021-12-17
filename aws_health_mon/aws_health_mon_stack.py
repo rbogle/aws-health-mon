@@ -1,5 +1,6 @@
 from typing import Dict,Any
 from aws_cdk import (
+    Duration,
     Stack,
     aws_lambda as _lambda,
     aws_events as events,
@@ -15,11 +16,11 @@ class AwsHealthMonStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, config: dict, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
         frequency_minutes = config.get("frequency", "5")
-        schedule_expression = f"{frequency_minutes} minutes" # type: str
+        schedule_expression = f"rate({frequency_minutes} minutes)" # type: str
         accounts_secret_name = config.get("accts_secret", "") # type: str
         slack_secret_name = config.get("slack_secret", "health_status_slack_url") # type: str
         accounts = None
-        
+
         # retrieve accounts secret with arns for assuming roles x-account
         if accounts_secret_name != "":
             accounts_secret = sm.Secret.from_secret_name_v2(self, "acct-secret", accounts_secret_name)
@@ -42,6 +43,7 @@ class AwsHealthMonStack(Stack):
             layers=[deps_layer],
             code=_lambda.Code.from_asset("./lambdas"),
             handler="health.handle_request",
+            timeout= Duration.seconds(15),
             environment={
                 "POLL_INTERVAL": frequency_minutes,
                 "SLACK_SECRET": slack_secret_name,
