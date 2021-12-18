@@ -13,14 +13,21 @@ The CDK stack has a few possible configuration items passed in via environment v
 - `frequency` the interval in minutes to poll the api for (Default: 5 minutes)
 - `accts_secret` list of arns for assumable roles in additional accounts (Default: "")
   
-you must prestage a slack webhook url into secret manager in the same region where your stack will be deployed it should have the format:
+You must prestage a slack webhook url into secret manager in the same region where your stack will be deployed it should have the format:
 
 - secret key: "url"
 - secret value: "https://hooks.slack.com/services/foo/bar"
   
 either name the secret `health_status_slack_url` or update a `.env` file with the name of the secret. 
 
-you also must bootstrap the account for cdk deployment if you have not already:
+If you wish to make cross account calls you need to creaet a secret in secrets manager with the format:
+
+- secret key: 'arns'
+- secret value: "arn1,arn2,arn3"
+
+And then add the name of the secret to your environment variables or `.env` file. 
+
+Note: You also must bootstrap the account for cdk deployment if you have not already:
 
 ```bash
 cdk bootstrap
