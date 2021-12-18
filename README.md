@@ -2,7 +2,7 @@
 # AWS Heath Monitoring
 
 This project creates a service to poll the AWS health API in your AWS account on a regular interval and post updates to a slack incoming webhook.
-The health api is only available to Business, or Enterprise support plan accounts. For more details see the [aws health user guide.](https://docs.aws.amazon.com/health/latest/ug/health-api.html#using-the-python-code). We use a polling pattern to be able to pick up `public` events that do not trigger as cloudwatch events natively.
+The health api is only available to Business, or Enterprise support plan accounts. For more details see the [aws health user guide](https://docs.aws.amazon.com/health/latest/ug/health-api.html#using-the-python-code). We use a polling pattern to be able to pick up `public` events that do not trigger as cloudwatch events natively.
 We use CDK to create and deploy the infrastructure for the service, which is comprised of a lambda to poll the api, eventbridge rule to trigger the lambda and several permissions and policies. We've created the option to automatically query the api in other accounts given a list of arns for assumable roles kept in secrets manager. 
 
 ## Configure and Bootstrap
