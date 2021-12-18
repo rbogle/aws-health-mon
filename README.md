@@ -1,58 +1,47 @@
 
-# Welcome to your CDK Python project!
+# AWS Heath Monitoring
 
-This is a blank project for Python development with CDK.
+This project creates a service to poll the AWS health API in your AWS account on a regular interval and post updates to a slack incoming webhook.
+The health api is only available to Business, or Enterprise support plan accounts. For more details see the [aws health user guide.](https://docs.aws.amazon.com/health/latest/ug/health-api.html#using-the-python-code). We use a polling pattern to be able to pick up `public` events that do not trigger as cloudwatch events natively.
+We use CDK to create and deploy the infrastructure for the service, which is comprised of a lambda to poll the api, eventbridge rule to trigger the lambda and several permissions and policies. We've created the option to automatically query the api in other accounts given a list of arns for assumable roles kept in secrets manager. 
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Configure and Bootstrap
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+The CDK stack has a few possible configuration items passed in via environment variables or a `.env` file:
 
-To manually create a virtualenv on MacOS and Linux:
+- `slack_secret` this is name of a secrets manager secret containing the webhook url you wish to publish to (Default: 'health_status_slack_url')
+- `frequency` the interval in minutes to poll the api for (Default: 5 minutes)
+- `accts_secret` list of arns for assumable roles in additional accounts (Default: "")
+  
+you must prestage a slack webhook url into secret manager in the same region where your stack will be deployed it should have the format:
 
-```
-$ python3 -m venv .venv
-```
+- secret key: "url"
+- secret value: "https://hooks.slack.com/services/foo/bar"
+  
+either name the secret `health_status_slack_url` or update a `.env` file with the name of the secret. 
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+you also must bootstrap the account for cdk deployment if you have not already:
 
-```
-$ source .venv/bin/activate
-```
-
-If you are a Windows platform, you would activate the virtualenv like this:
-
-```
-% .venv\Scripts\activate.bat
+```bash
+cdk bootstrap
 ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+## Build and Deploy
 
-```
-$ pip install -r requirements.txt
-```
+We've included a [Taskfile](https://github.com/adriancooney/Taskfile) to simplify the setup, build and deploy of this cdk project. Taskfile is like a makefile but is natively a set of shell functions, and doesnt require any special dependencies.
 
-At this point you can now synthesize the CloudFormation template for this code.
+## Initial Setup
 
-```
-$ cdk synth
+```bash
+./Taskfile setup
 ```
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
+This will create the virtualenv for python, install the dependencies for cdk and the lambda, and then create the lambda layer .zip file. 
 
-## Useful commands
+## Deploy
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+```bash
+./Taskfile deploy
+```
 
-Enjoy!
+This will do a synthesis of the cdk stack and attempt to deploy it to the account your are currently logged into.
