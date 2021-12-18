@@ -50,12 +50,19 @@ class AwsHealthMonStack(Stack):
                 "ACCOUNTS_SECRET": accounts_secret_name
             }
         )
-        
+        # give lambda permission to make the api calls it needs
+        api_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["iam:ListAccountAliases", "health:DescribeEvents", "health:DescribeEventDetails" ],
+            resources=['*']
+        )
+        health_api_poll.add_to_role_policy(api_policy)
+
         # give lambda permission to retrieve secret 
         secrets_policy = iam.PolicyStatement(
             effect=iam.Effect.ALLOW,
             actions=["secretsmanager:GetSecretValue"],
-            resources=[slack_secret.secret_arn]
+            resources=[f"{slack_secret.secret_arn}*"]
         )
 
         # give the lambda permissions to assume roles in other account
@@ -68,10 +75,10 @@ class AwsHealthMonStack(Stack):
             for acct in accounts:
                 assume_policy.add_resources(acct)
 
-            secrets_policy.add_resources(accounts_secret.secret_arn)
+            secrets_policy.add_resources(f"{accounts_secret.secret_arn}*")
             health_api_poll.add_to_role_policy(assume_policy)
 
-        # add the secrets policy too
+        # add the secrets policy 
         health_api_poll.add_to_role_policy(secrets_policy)
 
         # Eventbridge rule to execute on schedule
