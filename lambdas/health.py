@@ -52,7 +52,7 @@ def post_slack_msg(client: WebhookClient, event: dict, account: str ):
     event_description = event['eventDescription'].get('latestDescription')
     event_region = event['event'].get('region')
     event_status = event['event'].get('statusCode') # type: str
-    event_service = event['event'].get('service', 'UNKNOWN').title()
+    event_service = event['event'].get('service', 'UNKNOWN')
     event_type = " ".join(event['event'].get('eventTypeCode','AWS_SERVICE_UNKNOWN').split('_')[2:]).title() # AWS_SERVICE_DESCRIPTION
     event_category = event['event'].get('eventTypeCategory').title() # issue | accountNotification | scheduledChange | investigation
     emoji = ":warning:"
@@ -76,13 +76,7 @@ def post_slack_msg(client: WebhookClient, event: dict, account: str ):
 					"type": "mrkdwn",
 					"text": f"*{event_category} is _{event_status.upper()}_*"
 				}, 
-		},
-        {
-            "type": "divider",
-        },
-		{
-			"type": "context",
-			"elements": [
+			"fields": [
 
                 {
 					"type": "mrkdwn",
@@ -99,16 +93,30 @@ def post_slack_msg(client: WebhookClient, event: dict, account: str ):
 
         {
             "type": "divider",
-        },
-        		{
-			"type": "section",
-			"text": {
-				"type": "plain_text",
-				"text": event_description
-			}
-		}
+        }
     ]
-    client.send(text= f"{emoji} *AWS {event_service} {event_type}*",blocks=msg_blocks)
+    updates = event_description.split("\n\n")
+    msg_blocks.append(
+        {
+            "type": "section",
+            "text": {
+                "type": "plain_text",
+                "text": updates[0]
+            }
+        }
+    )
+    msg_blocks.append(
+        {
+            "type": "section",
+            "text": {
+                "type": "plain_text",
+                "text": updates[-1]
+            }
+        }
+    )
+    response = client.send(text= f"{emoji} *AWS {event_service} {event_type}*",blocks=msg_blocks)
+    logger.debug(response.status_code)
+    logger.debug(response.body)
 
 def get_recent_events( from_time: datetime, assume_role_arn: str="", event_type: str="") -> Tuple[list,str]:
     # get creds for an accounts health api 
@@ -133,6 +141,7 @@ def get_recent_events( from_time: datetime, assume_role_arn: str="", event_type:
     # get event details
     if recent_changes:
         response = health.describe_event_details(eventArns=recent_arns)
+        logger.debug(response)
     return (response.get('successfulSet', list()), account_name)
 
 # lambda request handler
@@ -145,5 +154,6 @@ def handle_request(event: Dict[str,Any], context: Dict[str,Any]):
     for arn in accounts:
         events, acct_name = get_recent_events(since_time, assume_role_arn=arn)
         for event in events:
+            logger.debug(event)
             post_slack_msg(slack_client, event, acct_name)
     
