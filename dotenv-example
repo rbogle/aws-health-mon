@@ -1,0 +1,12 @@
+# AWS Secret Manager Secret Name
+# key: 'url' Value: 'a real slack webhook url'
+SLACK_SECRET="health_check_slack_url_secret"
+# Minutes interval to check
+FREQUENCY="5"
+# Examine all accounts in an org that dont suport org api endpoints (Govcloud) 
+USE_ORGS="False"
+# AWS Secret Manager Secret Name which stores a csv string of arns to use x-account
+# key: arns value: "arn1,arn2,arn...arnN" or 'arn with wildcard for org accounts'
+ACCOUNTS_SECRET="cross_account_arns_secret"
+# Name to use by default for org wide events
+ORG_NAME="My Org"

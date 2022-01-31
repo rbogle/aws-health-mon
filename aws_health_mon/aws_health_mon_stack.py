@@ -15,10 +15,12 @@ class AwsHealthMonStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, config: dict, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        frequency_minutes = config.get("frequency", "5")
+        frequency_minutes = config.get("FREQUENCY", "5")
         schedule_expression = f"rate({frequency_minutes} minutes)" # type: str
-        accounts_secret_name = config.get("accts_secret", "") # type: str
-        slack_secret_name = config.get("slack_secret", "health_status_slack_url") # type: str
+        use_organizations = bool(config.get("USE_ORGS", False))
+        accounts_secret_name = config.get("ACCOUNTS_SECRET", "") # type: str
+        slack_secret_name = config.get("SLACK_SECRET", "health_status_slack_url") # type: str
+        org_name = config.get("ORG_NAME", "My Org")
         accounts = None
 
         # retrieve accounts secret with arns for assuming roles x-account
@@ -47,7 +49,9 @@ class AwsHealthMonStack(Stack):
             environment={
                 "POLL_INTERVAL": frequency_minutes,
                 "SLACK_SECRET": slack_secret_name,
-                "ACCOUNTS_SECRET": accounts_secret_name
+                "ACCOUNTS_SECRET": accounts_secret_name,
+                "USE_ORGS": use_organizations,
+                "ORG_NAME": org_name
             }
         )
         # give lambda permission to make the api calls it needs
@@ -56,6 +60,11 @@ class AwsHealthMonStack(Stack):
             actions=["iam:ListAccountAliases", "health:DescribeEvents", "health:DescribeEventDetails" ],
             resources=['*']
         )
+        
+        # if we are going to use organization to get account list
+        if use_organizations:
+            api_policy.add_actions["organizations:ListAccounts"]
+
         health_api_poll.add_to_role_policy(api_policy)
 
         # give lambda permission to retrieve secret 
@@ -65,7 +74,7 @@ class AwsHealthMonStack(Stack):
             resources=[f"{slack_secret.secret_arn}*"]
         )
 
-        # give the lambda permissions to assume roles in other account
+        # give the lambda permissions to assume roles in other accounts
         # and lookup the arns in secrets manager 
         if accounts is not None:
             assume_policy = iam.PolicyStatement(

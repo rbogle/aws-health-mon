@@ -1,3 +1,4 @@
+import secrets
 from typing import Any, Dict, Tuple
 import aws_lambda_powertools as alp
 import os
@@ -6,21 +7,25 @@ from datetime import date, datetime,timezone,timedelta
 from aws_lambda_powertools.utilities.parameters import get_secret
 from slack_sdk.webhook import WebhookClient
 
-
 # globals
 log_level = os.environ.get("LOG_LEVEL", "INFO")
 time_delta = float(os.environ.get("POLL_INTERVAL", 5))
+use_orgs = bool(os.environ.get("USE_ORGS"))
 secrets_name = os.environ.get("ACCOUNTS_SECRET")
+org_name = os.environ.get("ORG_NAME", "My Org")
 accounts = list()
 logger = alp.Logger("health-poller", level=log_level)
-slack_url = get_secret(os.environ.get("SLACK_SECRET", "health_status_slack_url"), transform="json")['url']
-slack_client = WebhookClient(slack_url)
 
-# list of assumable role arns kept in secrets_manager
-if secrets_name:
-    accounts = get_secret(secrets_name,transform='json').get("arns").split(",")
-
-accounts.insert(0,"")
+def get_org_assume_roles(base_arn: str) -> list:
+    arns = list()
+    client = boto3.client('organizations')
+    response = client.list_accounts()
+    for account in response['Accounts']:
+        account_id=account.get('Id')
+        new_arn = base_arn
+        new_arn.replace('*', account_id,)
+        arns.append(new_arn)
+    return arns
 
 # will return a health api client for an account given an assumable role. 
 def health_api_client(rolearn: str="") -> Tuple[boto3.client, str]:
@@ -48,8 +53,9 @@ def health_api_client(rolearn: str="") -> Tuple[boto3.client, str]:
 def get_past_time(minutes_interval: float=5) -> datetime:
     return datetime.now(timezone.utc)- timedelta(minutes=minutes_interval) 
 
-def post_slack_msg(client: WebhookClient, event: dict, account: str ):
+def post_slack_msg(client: WebhookClient, event: dict):
     event_description = event['eventDescription'].get('latestDescription')
+    event_account = event['event']['account']
     event_region = event['event'].get('region')
     event_status = event['event'].get('statusCode') # type: str
     event_service = event['event'].get('service', 'UNKNOWN')
@@ -80,7 +86,7 @@ def post_slack_msg(client: WebhookClient, event: dict, account: str ):
 
                 {
 					"type": "mrkdwn",
-					"text": f"*{account}*"
+					"text": f"*{event_account}*"
 				}, 
                 {
 					"type": "mrkdwn",
@@ -118,7 +124,7 @@ def post_slack_msg(client: WebhookClient, event: dict, account: str ):
     logger.debug(response.status_code)
     logger.debug(response.body)
 
-def get_recent_events( from_time: datetime, assume_role_arn: str="", event_type: str="") -> Tuple[list,str]:
+def get_recent_events( events: dict, from_time: datetime, org_name: str, assume_role_arn: str="", event_type: str=""):
     # get creds for an accounts health api 
     health, account_name = health_api_client(assume_role_arn) # 
     my_filter = {
@@ -128,6 +134,7 @@ def get_recent_events( from_time: datetime, assume_role_arn: str="", event_type:
     }
     if event_type !="":
         my_filter['eventTypeCategories']= event_type
+
     response= health.describe_events(
         maxResults = 100,
         filter = my_filter
@@ -135,25 +142,44 @@ def get_recent_events( from_time: datetime, assume_role_arn: str="", event_type:
     
     recent_changes = response.get('events', list())
     # get arns of returned events
-    recent_arns = list()
+    
     for event in recent_changes:
-        recent_arns.append(event.get('arn'))
-    # get event details
-    if recent_changes:
-        response = health.describe_event_details(eventArns=recent_arns)
-        logger.debug(response)
-    return (response.get('successfulSet', list()), account_name)
+        arn = event.get('arn')
+        if arn not in events.keys():
+            response = health.describe_event_details(eventArns=[arn])
+            logger.debug(response)
+            details = response.get('successfulSet',list())[0]
+            if details['event']['eventTypeCategory']=='accountNotification':
+                details['event']['account']=account_name
+            else:
+                details['event']['account']=org_name
+            events[arn] = details
 
 # lambda request handler
 @logger.inject_lambda_context(log_event=True)
 def handle_request(event: Dict[str,Any], context: Dict[str,Any]):
+    slack_url = get_secret(os.environ.get("SLACK_SECRET", "health_status_slack_url"), transform="json")['url']
+    slack_client = WebhookClient(slack_url)
+
+    # list of assumable role arns kept in secrets_manager
+    if secrets_name:
+        accounts: list = get_secret(secrets_name,transform='json').get("arns").split(",")
+        # if using orgs then there should be only one arn (a wildcard) 
+        # and we need to get the list of accounts to build a list of arns
+        if use_orgs:
+            base_arn = accounts.pop()
+            accounts = get_org_assume_roles(base_arn)
+    # prepend for host account
+    accounts.insert(0,"")
 
     since_time = get_past_time(time_delta)
     # query this account's health-api for any event
     # that has been updated in the last x mintues
+    events = dict()
     for arn in accounts:
-        events, acct_name = get_recent_events(since_time, assume_role_arn=arn)
-        for event in events:
-            logger.debug(event)
-            post_slack_msg(slack_client, event, acct_name)
+        get_recent_events(events, since_time, org_name, assume_role_arn=arn)
+    # now we post events
+    for event in events.items:
+        logger.debug(event)
+        post_slack_msg(slack_client, event)
     
